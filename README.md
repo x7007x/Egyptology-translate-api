@@ -4,6 +4,7 @@ Free translation API deployed on Vercel, powered by two Python libraries with no
 
 - `openai-translate==1.0.2` for ChatGPT Translate
 - `deepl-free==1.0.0` for DeepL
+- Google Translate through its free web endpoint, no key needed
 
 ## Live endpoints
 
@@ -24,7 +25,7 @@ curl -X POST https://egyptology-translate-api.vercel.app/api/translate \
 | `text` | Text to translate, max 5000 characters | required |
 | `target` | Target language code such as `ar`, `en`, `es`, `fr`, `de` | `en` |
 | `source` | Source language code, or `auto` | `auto` |
-| `engine` | `deepl` or `openai` | `deepl` |
+| `engine` | `deepl`, `openai` or `google` | `deepl` |
 
 ### Detect language
 
