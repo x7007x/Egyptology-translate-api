@@ -10,7 +10,7 @@ Free translation API deployed on Vercel, powered by two Python libraries with no
 ### Translate
 
 ```bash
-curl -X POST https://translate-api-x7007x.vercel.app/api/translate \
+curl -X POST https://translate-api-smoky.vercel.app/api/translate \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "target": "ar", "source": "auto", "engine": "deepl"}'
 ```
@@ -29,7 +29,7 @@ curl -X POST https://translate-api-x7007x.vercel.app/api/translate \
 ### Detect language
 
 ```bash
-curl -X POST https://translate-api-x7007x.vercel.app/api/detect \
+curl -X POST https://translate-api-smoky.vercel.app/api/detect \
   -H "Content-Type: application/json" \
   -d '{"text": "Bonjour le monde"}'
 ```
@@ -37,14 +37,16 @@ curl -X POST https://translate-api-x7007x.vercel.app/api/detect \
 ### Languages
 
 ```bash
-curl https://translate-api-x7007x.vercel.app/api/languages
+curl https://translate-api-smoky.vercel.app/api/languages
 ```
 
 ### Health
 
 ```bash
-curl https://translate-api-x7007x.vercel.app/api/health
+curl https://translate-api-smoky.vercel.app/api/health
 ```
+
+Note: the `openai` engine talks to chatgpt.com, which sometimes blocks datacenter IPs, so on Vercel it can return an error while the same code works from a local machine. The `deepl` engine works on Vercel with no restrictions
 
 ## Run locally
 
