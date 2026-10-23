@@ -11,7 +11,7 @@ Free translation API deployed on Vercel, powered by two Python libraries with no
 ### Translate
 
 ```bash
-curl -X POST https://egyptology-translate-api.vercel.app/api/translate \
+curl -X POST https://egyptology-api.vercel.app/api/translate \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "target": "ar", "source": "auto", "engine": "deepl"}'
 ```
@@ -30,7 +30,7 @@ curl -X POST https://egyptology-translate-api.vercel.app/api/translate \
 ### Detect language
 
 ```bash
-curl -X POST https://egyptology-translate-api.vercel.app/api/detect \
+curl -X POST https://egyptology-api.vercel.app/api/detect \
   -H "Content-Type: application/json" \
   -d '{"text": "Bonjour le monde"}'
 ```
@@ -38,13 +38,13 @@ curl -X POST https://egyptology-translate-api.vercel.app/api/detect \
 ### Languages
 
 ```bash
-curl https://egyptology-translate-api.vercel.app/api/languages
+curl https://egyptology-api.vercel.app/api/languages
 ```
 
 ### Health
 
 ```bash
-curl https://egyptology-translate-api.vercel.app/api/health
+curl https://egyptology-api.vercel.app/api/health
 ```
 
 Note: chatgpt.com blocks plain datacenter requests, so the `openai` engine retries automatically with a Chrome-impersonated session (curl_cffi) when the first handshake is blocked
