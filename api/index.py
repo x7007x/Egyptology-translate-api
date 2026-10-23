@@ -16,11 +16,57 @@ def add_headers(response):
     return response
 
 
+def translate_openai_cffi(text, target, source):
+    import uuid
+
+    from curl_cffi import requests as creq
+    from openai_translate import OpenAITranslate
+
+    t = OpenAITranslate()
+    s = creq.Session(impersonate="chrome")
+    s.headers.update({"User-Agent": OpenAITranslate.UA, "Origin": OpenAITranslate.BASE, "Referer": OpenAITranslate.BASE + "/translate/"})
+    t.s = s
+    t._handshake()
+    payload = {"request": {"includeDetectedLanguage": source == "detect", "sourceLanguageCode": source, "sourceLanguageLabel": OpenAITranslate.LABELS.get(source, source), "targetLanguageCode": target, "targetLanguageLabel": OpenAITranslate.LABELS.get(target, target), "text": text, "pipeline": "latency-optimized"}, "dedicatedRequest": None, "sentinel": {"chatReqToken": t._token, "chatReqPrepareToken": t._prepare_token, "turnstileToken": None, "proofToken": t._proof}}
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "OAI-Language": "en-US", "OAI-Device-Id": s.cookies.get("oai-did", ""), "x-openai-web-frontend": "core_web", "OAI-Client-Version": "prod-c8f39f744fd82e629b912bf379c8c9837ab5ccde", "OAI-Client-Build-Number": "12327112", "OAI-Session-Id": str(uuid.uuid4())}
+    r = s.post(OpenAITranslate.BASE + "/translate/stream", json=payload, headers=headers, timeout=90)
+    if r.status_code != 200:
+        raise RuntimeError(f"translate failed ({r.status_code})")
+    out = []
+    for line in r.text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            out.append(json.loads(data).get("delta", ""))
+        except ValueError:
+            pass
+    result = "".join(out)
+    if not result:
+        raise RuntimeError("empty translation response")
+    return result
+
+
+def translate_openai(text, target, source):
+    from openai_translate import OpenAITranslate
+
+    last = None
+    for attempt in range(3):
+        try:
+            if attempt == 0:
+                return OpenAITranslate().translate(text, target=target, source=source)
+            return translate_openai_cffi(text, target, source)
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"openai engine failed after retries: {str(last)[:200]}")
+
+
 def translate_text(text, target, source, engine):
     if engine == "openai":
-        from openai_translate import OpenAITranslate
         src = "detect" if source in ("", "auto", "detect") else source
-        return OpenAITranslate().translate(text, target=target, source=src)
+        return translate_openai(text, target, src)
     from deepl_free import DeepL
     src = "auto" if source in ("", "auto", "detect") else source
     return DeepL().translate(text, target=target, source=src)
