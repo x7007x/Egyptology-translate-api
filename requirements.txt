@@ -1,0 +1,2 @@
+openai-translate==1.0.2
+deepl-free==1.0.0
