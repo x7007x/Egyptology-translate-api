@@ -27,6 +27,22 @@ curl -X POST https://egyptology-api.vercel.app/api/translate \
 | `source` | Source language code, or `auto` | `auto` |
 | `engine` | `deepl`, `openai` or `google` | `deepl` |
 
+### AI chat
+
+Free chat powered by the `big-pickle` model on OpenCode Zen, no key needed
+
+```bash
+curl -X POST https://egyptology-api.vercel.app/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello"}'
+```
+
+```json
+{"ok": true, "model": "big-pickle", "prompt": "Hello", "reply": "Hello! How can I help you today?"}
+```
+
+The free tier has a shared usage limit, when it is reached the endpoint returns the upstream limit error until the quota resets
+
 ### Detect language
 
 ```bash

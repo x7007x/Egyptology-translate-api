@@ -32,9 +32,16 @@ textarea{min-height:130px;resize:vertical}button{background:#2563eb;border-color
 <button id="go">Translate</button>
 <div class="err" id="err"></div>
 </div>
+<div class="card" style="margin-top:20px">
+<div class="row"><div class="field"><label>AI Chat, big-pickle</label><textarea id="prompt" placeholder="Ask anything"></textarea></div></div>
+<div class="row"><div class="field"><label>Reply</label><div class="out" id="chatout"></div></div></div>
+<button id="ask">Ask</button>
+<div class="err" id="chaterr"></div>
+</div>
 <div class="docs">
 API<br>
 <code>POST /api/translate</code> with <code>{"text":"Hello","target":"ar","source":"auto","engine":"deepl"}</code><br>
+<code>POST /api/chat</code> with <code>{"prompt":"Hello"}</code><br>
 <code>POST /api/detect</code> with <code>{"text":"Bonjour"}</code><br>
 <code>GET /api/languages</code> and <code>GET /api/health</code>
 </div>
@@ -45,6 +52,11 @@ go.onclick=async()=>{err.textContent='';out.textContent='';go.disabled=true;go.t
 try{const r=await fetch('/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:document.getElementById('text').value,target:document.getElementById('target').value,source:document.getElementById('source').value,engine:document.getElementById('engine').value})});
 const d=await r.json();if(!d.ok)throw new Error(d.error||'failed');out.textContent=d.translation}catch(e){err.textContent=e.message}
 go.disabled=false;go.textContent='Translate'};
+const ask=document.getElementById('ask'),cout=document.getElementById('chatout'),cerr=document.getElementById('chaterr');
+ask.onclick=async()=>{cerr.textContent='';cout.textContent='';ask.disabled=true;ask.textContent='Thinking...';
+try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:document.getElementById('prompt').value})});
+const d=await r.json();if(!d.ok)throw new Error(d.error||'failed');cout.textContent=d.reply}catch(e){cerr.textContent=e.message}
+ask.disabled=false;ask.textContent='Ask'};
 </script>
 </body>
 </html>
