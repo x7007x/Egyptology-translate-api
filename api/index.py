@@ -150,8 +150,12 @@ def chat_opencode(prompt: str) -> str:
         os.makedirs(home, exist_ok=True)
         env.update({"HOME": home, "XDG_DATA_HOME": home + "/.local/share", "XDG_CONFIG_HOME": home + "/.config", "XDG_CACHE_HOME": home + "/.cache"})
         timeout = 55
+    cmd = ["opencode", "run", "-m", "opencode/big-pickle", "--format", "json", "--dangerously-skip-permissions"]
+    if env.get("VERCEL"):
+        cmd += ["--dir", "/tmp"]
+    cmd.append(prompt)
     proc = subprocess.run(
-        ["opencode", "run", "-m", "opencode/big-pickle", "--format", "json", "--dangerously-skip-permissions", prompt],
+        cmd,
         capture_output=True,
         text=True,
         timeout=timeout,
