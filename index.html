@@ -55,7 +55,7 @@ go.disabled=false;go.textContent='Translate'};
 const ask=document.getElementById('ask'),cout=document.getElementById('chatout'),cerr=document.getElementById('chaterr'),history=[];
 ask.onclick=async()=>{cerr.textContent='';const q=document.getElementById('prompt').value.trim();if(!q)return;history.push({role:'user',content:q});document.getElementById('prompt').value='';ask.disabled=true;ask.textContent='Thinking...';
 try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history})});
-const d=await r.json();if(!d.ok)throw new Error(d.error||'failed');history.push({role:'assistant',content:d.reply});cout.textContent=history.map(m=>(m.role==='user'?'You: ':'AI: ')+m.content).join('\n\n')}catch(e){cerr.textContent=e.message;history.pop()}
+const d=await r.json();if(!d.ok)throw new Error(d.error||'failed');let rp=d.reply;if(Array.isArray(d.tool_calls)&&d.tool_calls.length){rp+='\n'+d.tool_calls.map(x=>'🔧 '+x.tool+(x.output?': '+String(x.output).slice(0,300):'')).join('\n')}history.push({role:'assistant',content:rp});cout.textContent=history.map(m=>(m.role==='user'?'You: ':'AI: ')+m.content).join('\n\n')}catch(e){cerr.textContent=e.message;history.pop()}
 ask.disabled=false;ask.textContent='Ask'};
 </script>
 </body>

@@ -45,9 +45,15 @@ curl -X POST https://egyptology-api.vercel.app/api/chat \
 
 ```json
 {"ok": true, "model": "big-pickle", "via": "opencode-cli", "prompt": "Hello", "reply": "Hello! How can I help you today?"}
+
+The model can call tools while it works (bash, read, write, edit, search and more) inside a sandbox. Every call it makes comes back in `tool_calls` with its name, status, input and output:
+
+```json
+{"tool": "bash", "status": "completed", "input": {"command": "echo hi"}, "output": "hi"}
+```
 ```
 
-The free tier has a shared usage limit, when it is reached the endpoint returns the upstream limit error until the quota resets
+Chats run through the installed OpenCode client. If that path ever fails, the endpoint falls back to the Zen API and returns its error as-is
 
 ### Detect language
 
