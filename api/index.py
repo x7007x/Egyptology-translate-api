@@ -111,7 +111,7 @@ def translate_text(text, target, source, engine):
     return DeepL().translate(text, target=target, source=src)
 
 
-OPENCODE_TARBALL = "https://github.com/sst/opencode/releases/download/v1.19.5/opencode-linux-x64.tar.gz"
+OPENCODE_TARBALL = "https://github.com/sst/opencode/releases/download/v1.18.31/opencode-linux-x64.tar.gz"
 
 
 def opencode_bin():
