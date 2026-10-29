@@ -2,7 +2,7 @@
 
 Free translation API deployed on Vercel, powered by two Python libraries with no API key and no login required
 
-- `openai-translate==1.0.2` for ChatGPT Translate
+- `openai-translate==1.0.3` for ChatGPT Translate
 - `deepl-free==1.0.0` for DeepL
 - Google Translate through its free web endpoint, no key needed
 

@@ -1,5 +1,5 @@
-openai-translate==1.0.2
+openai-translate==1.0.3
 deepl-free==1.0.0
 flask
 curl_cffi==0.16.3
-openai
+openai==3.41.0

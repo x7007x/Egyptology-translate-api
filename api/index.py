@@ -28,9 +28,9 @@ def translate_openai_cffi(text, target, source):
     s.headers.update({"User-Agent": OpenAITranslate.UA, "Origin": OpenAITranslate.BASE, "Referer": OpenAITranslate.BASE + "/translate/"})
     t.s = s
     t._handshake()
-    payload = {"request": {"includeDetectedLanguage": source == "detect", "sourceLanguageCode": source, "sourceLanguageLabel": OpenAITranslate.LABELS.get(source, source), "targetLanguageCode": target, "targetLanguageLabel": OpenAITranslate.LABELS.get(target, target), "text": text, "pipeline": "latency-optimized"}, "dedicatedRequest": None, "sentinel": {"chatReqToken": t._token, "chatReqPrepareToken": t._prepare_token, "turnstileToken": None, "proofToken": t._proof}}
-    headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "OAI-Language": "en-US", "OAI-Device-Id": s.cookies.get("oai-did", ""), "x-openai-web-frontend": "core_web", "OAI-Client-Version": "prod-c8f39f744fd82e629b912bf379c8c9837ab5ccde", "OAI-Client-Build-Number": "12327112", "OAI-Session-Id": str(uuid.uuid4())}
-    r = s.post(OpenAITranslate.BASE + "/translate/stream", json=payload, headers=headers, timeout=90)
+    payload = {"text": text, "sourceLanguageCode": source, "targetLanguageCode": target}
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "OAI-Device-Id": s.cookies.get("oai-did", ""), "OAI-Session-Id": str(uuid.uuid4()), "OpenAI-Sentinel-Chat-Requirements-Token": t._token, "OpenAI-Sentinel-Proof-Token": t._proof}
+    r = s.post(OpenAITranslate.BASE + "/backend-anon/translate/stream", json=payload, headers=headers, timeout=90)
     if r.status_code != 200:
         raise RuntimeError(f"translate failed ({r.status_code})")
     out = []
@@ -148,7 +148,7 @@ def body():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "service": "translate-api", "engines": ["deepl", "openai", "google"], "versions": {"openai-translate": "1.0.2", "deepl-free": "1.0.0"}})
+    return jsonify({"ok": True, "service": "translate-api", "engines": ["deepl", "openai", "google"], "versions": {"openai-translate": "1.0.3", "deepl-free": "1.0.0"}})
 
 
 @app.route("/api/translate", methods=["GET", "POST", "OPTIONS"])
