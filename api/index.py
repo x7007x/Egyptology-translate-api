@@ -136,42 +136,58 @@ def opencode_bin():
     return str(cached)
 
 
-def chat_cli(messages) -> str:
+def chat_opencode(prompt: str) -> str:
     import os
     import subprocess
+    from pathlib import Path
 
-    lines = []
-    for m in messages:
-        role = "Assistant" if m.get("role") == "assistant" else "User"
-        lines.append(f"{role}: {m.get('content', '')}")
-    prompt = "\n".join(lines)
-    home = "/tmp/opencode-home"
-    os.makedirs(home, exist_ok=True)
     env = dict(os.environ)
-    env.update({"HOME": home, "XDG_DATA_HOME": home + "/.local/share", "XDG_CONFIG_HOME": home + "/.config", "XDG_CACHE_HOME": home + "/.cache", "OPENCODE_DISABLE_SHARE": "true"})
-    proc = subprocess.run([opencode_bin(), "run", "--format", "json", "-m", "opencode/big-pickle", prompt], capture_output=True, text=True, timeout=50, cwd="/tmp", env=env)
-    out = []
-    for line in (proc.stdout or "").splitlines():
+    bin_dir = str(Path(opencode_bin()).resolve().parent)
+    env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+    timeout = 900
+    if env.get("VERCEL"):
+        home = "/tmp/opencode-home"
+        os.makedirs(home, exist_ok=True)
+        env.update({"HOME": home, "XDG_DATA_HOME": home + "/.local/share", "XDG_CONFIG_HOME": home + "/.config", "XDG_CACHE_HOME": home + "/.cache"})
+        timeout = 55
+    proc = subprocess.run(
+        ["opencode", "run", "-m", "opencode/big-pickle", "--format", "json", prompt],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
+    parts = []
+    for line in proc.stdout.splitlines():
         line = line.strip()
         if not line.startswith("{"):
             continue
         try:
             event = json.loads(line)
-        except ValueError:
+        except json.JSONDecodeError:
             continue
         if event.get("type") == "error":
-            raise RuntimeError(str(event.get("error") or event)[:400])
+            err = event.get("error") or {}
+            data = err.get("data") or {}
+            raise RuntimeError(data.get("message") or err.get("name") or "opencode error")
         part = event.get("part") or {}
         if event.get("type") == "text" and part.get("type") == "text":
-            out.append(part.get("text") or "")
-    result = "".join(out).strip()
-    if not result:
-        plain = (proc.stdout or "").strip()
-        if proc.returncode == 0 and plain and not plain.startswith("{"):
-            result = plain
-    if not result:
-        raise RuntimeError((proc.stderr or "opencode returned no text")[:400])
-    return result
+            text = part.get("text") or ""
+            if text:
+                parts.append(text)
+    if not parts and proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"opencode exited with {proc.returncode}")
+    return "".join(parts)
+
+
+def chat_cli(messages) -> str:
+    if len(messages) == 1:
+        return chat_opencode(messages[0].get("content", ""))
+    lines = []
+    for m in messages:
+        role = "Assistant" if m.get("role") == "assistant" else "User"
+        lines.append(f"{role}: {m.get('content', '')}")
+    return chat_opencode("\n".join(lines))
 
 
 def chat(messages) -> str:
