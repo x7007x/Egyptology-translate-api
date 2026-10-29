@@ -5,3 +5,5 @@ __pycache__/
 .vercel
 venv/
 .venv/
+bin/
+regen_home.py

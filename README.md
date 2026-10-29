@@ -29,7 +29,7 @@ curl -X POST https://egyptology-api.vercel.app/api/translate \
 
 ### AI chat
 
-Free chat powered by the `big-pickle` model on OpenCode Zen, no key needed
+Free chat powered by the `big-pickle` model through the real OpenCode client, no key needed. The Vercel build installs the `opencode` CLI into the deployment and the endpoint runs it for each chat, with the OpenCode Zen API as a fallback. Multi-turn chats are supported by sending the full history
 
 ```bash
 curl -X POST https://egyptology-api.vercel.app/api/chat \
@@ -37,8 +37,14 @@ curl -X POST https://egyptology-api.vercel.app/api/chat \
   -d '{"prompt": "Hello"}'
 ```
 
+```bash
+curl -X POST https://egyptology-api.vercel.app/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi, how can I help?"}, {"role": "user", "content": "Tell me a joke"}]}'
+```
+
 ```json
-{"ok": true, "model": "big-pickle", "prompt": "Hello", "reply": "Hello! How can I help you today?"}
+{"ok": true, "model": "big-pickle", "via": "opencode-cli", "prompt": "Hello", "reply": "Hello! How can I help you today?"}
 ```
 
 The free tier has a shared usage limit, when it is reached the endpoint returns the upstream limit error until the quota resets

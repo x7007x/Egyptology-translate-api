@@ -111,7 +111,70 @@ def translate_text(text, target, source, engine):
     return DeepL().translate(text, target=target, source=src)
 
 
-def chat(prompt: str) -> str:
+OPENCODE_TARBALL = "https://github.com/sst/opencode/releases/download/v1.19.5/opencode-linux-x64.tar.gz"
+
+
+def opencode_bin():
+    import os
+    from pathlib import Path
+
+    bundled = Path(__file__).resolve().parent.parent / "bin" / "opencode"
+    if bundled.exists():
+        return str(bundled)
+    cached = Path("/tmp/opencode-bin/opencode")
+    if cached.exists():
+        return str(cached)
+    import tarfile
+    import urllib.request
+
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    archive = "/tmp/opencode-bin/oc.tar.gz"
+    urllib.request.urlretrieve(OPENCODE_TARBALL, archive)
+    with tarfile.open(archive) as tf:
+        tf.extractall("/tmp/opencode-bin")
+    os.chmod(cached, 0o755)
+    return str(cached)
+
+
+def chat_cli(messages) -> str:
+    import os
+    import subprocess
+
+    lines = []
+    for m in messages:
+        role = "Assistant" if m.get("role") == "assistant" else "User"
+        lines.append(f"{role}: {m.get('content', '')}")
+    prompt = "\n".join(lines)
+    home = "/tmp/opencode-home"
+    os.makedirs(home, exist_ok=True)
+    env = dict(os.environ)
+    env.update({"HOME": home, "XDG_DATA_HOME": home + "/.local/share", "XDG_CONFIG_HOME": home + "/.config", "XDG_CACHE_HOME": home + "/.cache", "OPENCODE_DISABLE_SHARE": "true"})
+    proc = subprocess.run([opencode_bin(), "run", "--format", "json", "-m", "opencode/big-pickle", prompt], capture_output=True, text=True, timeout=50, cwd="/tmp", env=env)
+    out = []
+    for line in (proc.stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") == "error":
+            raise RuntimeError(str(event.get("error") or event)[:400])
+        part = event.get("part") or {}
+        if event.get("type") == "text" and part.get("type") == "text":
+            out.append(part.get("text") or "")
+    result = "".join(out).strip()
+    if not result:
+        plain = (proc.stdout or "").strip()
+        if proc.returncode == 0 and plain and not plain.startswith("{"):
+            result = plain
+    if not result:
+        raise RuntimeError((proc.stderr or "opencode returned no text")[:400])
+    return result
+
+
+def chat(messages) -> str:
     from openai import OpenAI
 
     client = OpenAI(
@@ -125,7 +188,7 @@ def chat(prompt: str) -> str:
     )
     stream = client.chat.completions.create(
         model="big-pickle",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         stream=True,
         tools=[
             {"type": "function", "function": {"name": "bash", "parameters": {"type": "object", "properties": {}}}},
@@ -198,18 +261,35 @@ def ai_chat():
     if request.method == "OPTIONS":
         return "", 204
     if request.method == "GET":
-        return jsonify({"ok": True, "endpoint": "chat", "method": "POST", "body": {"prompt": "Hello"}, "model": "big-pickle", "provider": "opencode.ai/zen"})
+        return jsonify({"ok": True, "endpoint": "chat", "method": "POST", "body": {"prompt": "Hello", "messages": [{"role": "user", "content": "Hello"}]}, "model": "big-pickle", "provider": "opencode", "via": "opencode CLI installed at build time, Zen API as fallback"})
     data = body()
-    prompt = str(data.get("prompt") or "").strip()
-    if not prompt:
-        return jsonify({"ok": False, "error": "prompt is required"}), 400
-    if len(prompt) > MAX_TEXT_LENGTH:
-        return jsonify({"ok": False, "error": f"prompt exceeds {MAX_TEXT_LENGTH} characters"}), 400
+    messages = data.get("messages")
+    if isinstance(messages, list) and messages:
+        clean = []
+        for m in messages:
+            if isinstance(m, dict) and str(m.get("content") or "").strip():
+                role = m.get("role") if m.get("role") in ("user", "assistant", "system") else "user"
+                clean.append({"role": role, "content": str(m["content"])})
+        messages = clean
+    else:
+        prompt = str(data.get("prompt") or "").strip()
+        messages = [{"role": "user", "content": prompt}] if prompt else []
+    if not messages:
+        return jsonify({"ok": False, "error": "prompt or messages is required"}), 400
+    total = sum(len(m["content"]) for m in messages)
+    if total > MAX_TEXT_LENGTH * 4:
+        return jsonify({"ok": False, "error": "conversation is too long"}), 400
+    last_prompt = messages[-1]["content"]
     try:
-        reply = chat(prompt)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:500]}), 502
-    return jsonify({"ok": True, "model": "big-pickle", "prompt": prompt, "reply": reply})
+        reply = chat_cli(messages)
+        via = "opencode-cli"
+    except Exception:
+        try:
+            reply = chat(messages)
+            via = "zen-api"
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)[:500]}), 502
+    return jsonify({"ok": True, "model": "big-pickle", "via": via, "prompt": last_prompt, "reply": reply})
 
 
 @app.route("/api/languages", methods=["GET"])
@@ -223,7 +303,7 @@ def languages():
     response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
-HOME_HTML = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Translate API</title>\n<style>\n*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1115;color:#f2f4f8}\nmain{max-width:820px;margin:0 auto;padding:32px 16px 48px}h1{font-size:28px;margin:0 0 6px}p.sub{color:#9aa4b2;margin:0 0 24px}\n.card{background:#171a21;border:1px solid #262b36;border-radius:16px;padding:20px}\n.row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}.field{flex:1;min-width:140px}\nlabel{display:block;font-size:13px;color:#9aa4b2;margin-bottom:6px}\nselect,textarea,button{width:100%;border-radius:10px;border:1px solid #2c333f;background:#0f1115;color:#f2f4f8;padding:12px;font-size:15px}\ntextarea{min-height:130px;resize:vertical}button{background:#2563eb;border-color:#2563eb;font-weight:600;cursor:pointer}button:disabled{opacity:.6;cursor:wait}\n.out{white-space:pre-wrap;word-break:break-word;background:#0f1115;border:1px solid #2c333f;border-radius:10px;padding:12px;min-height:130px}\n.err{color:#f87171;font-size:14px;min-height:20px;margin-top:10px}code{background:#262b36;padding:2px 6px;border-radius:6px}\n.docs{margin-top:24px;color:#9aa4b2;font-size:14px;line-height:1.9}\n</style>\n</head>\n<body>\n<main>\n<h1>Translate API</h1>\n<p class="sub">Free translation powered by DeepL, ChatGPT Translate and Google Translate, no API key needed</p>\n<div class="card">\n<div class="row">\n<div class="field"><label>Engine</label><select id="engine"><option value="deepl">DeepL</option><option value="openai">ChatGPT Translate</option><option value="google">Google Translate</option></select></div>\n<div class="field"><label>From</label><select id="source"><option value="auto">Auto detect</option><option value="en">English</option><option value="ar">Arabic</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="zh">Chinese</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="tr">Turkish</option></select></div>\n<div class="field"><label>To</label><select id="target"><option value="ar">Arabic</option><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="zh">Chinese</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="tr">Turkish</option></select></div>\n</div>\n<div class="row"><div class="field"><label>Text</label><textarea id="text" placeholder="Type text to translate"></textarea></div></div>\n<div class="row"><div class="field"><label>Translation</label><div class="out" id="output"></div></div></div>\n<button id="go">Translate</button>\n<div class="err" id="err"></div>\n</div>\n<div class="card" style="margin-top:20px">\n<div class="row"><div class="field"><label>AI Chat, big-pickle</label><textarea id="prompt" placeholder="Ask anything"></textarea></div></div>\n<div class="row"><div class="field"><label>Reply</label><div class="out" id="chatout"></div></div></div>\n<button id="ask">Ask</button>\n<div class="err" id="chaterr"></div>\n</div>\n<div class="docs">\nAPI<br>\n<code>POST /api/translate</code> with <code>{"text":"Hello","target":"ar","source":"auto","engine":"deepl"}</code><br>\n<code>POST /api/chat</code> with <code>{"prompt":"Hello"}</code><br>\n<code>POST /api/detect</code> with <code>{"text":"Bonjour"}</code><br>\n<code>GET /api/languages</code> and <code>GET /api/health</code>\n</div>\n</main>\n<script>\nconst go=document.getElementById(\'go\'),out=document.getElementById(\'output\'),err=document.getElementById(\'err\');\ngo.onclick=async()=>{err.textContent=\'\';out.textContent=\'\';go.disabled=true;go.textContent=\'Translating...\';\ntry{const r=await fetch(\'/api/translate\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({text:document.getElementById(\'text\').value,target:document.getElementById(\'target\').value,source:document.getElementById(\'source\').value,engine:document.getElementById(\'engine\').value})});\nconst d=await r.json();if(!d.ok)throw new Error(d.error||\'failed\');out.textContent=d.translation}catch(e){err.textContent=e.message}\ngo.disabled=false;go.textContent=\'Translate\'};\nconst ask=document.getElementById(\'ask\'),cout=document.getElementById(\'chatout\'),cerr=document.getElementById(\'chaterr\');\nask.onclick=async()=>{cerr.textContent=\'\';cout.textContent=\'\';ask.disabled=true;ask.textContent=\'Thinking...\';\ntry{const r=await fetch(\'/api/chat\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({prompt:document.getElementById(\'prompt\').value})});\nconst d=await r.json();if(!d.ok)throw new Error(d.error||\'failed\');cout.textContent=d.reply}catch(e){cerr.textContent=e.message}\nask.disabled=false;ask.textContent=\'Ask\'};\n</script>\n</body>\n</html>\n'
+HOME_HTML = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Translate API</title>\n<style>\n*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1115;color:#f2f4f8}\nmain{max-width:820px;margin:0 auto;padding:32px 16px 48px}h1{font-size:28px;margin:0 0 6px}p.sub{color:#9aa4b2;margin:0 0 24px}\n.card{background:#171a21;border:1px solid #262b36;border-radius:16px;padding:20px}\n.row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}.field{flex:1;min-width:140px}\nlabel{display:block;font-size:13px;color:#9aa4b2;margin-bottom:6px}\nselect,textarea,button{width:100%;border-radius:10px;border:1px solid #2c333f;background:#0f1115;color:#f2f4f8;padding:12px;font-size:15px}\ntextarea{min-height:130px;resize:vertical}button{background:#2563eb;border-color:#2563eb;font-weight:600;cursor:pointer}button:disabled{opacity:.6;cursor:wait}\n.out{white-space:pre-wrap;word-break:break-word;background:#0f1115;border:1px solid #2c333f;border-radius:10px;padding:12px;min-height:130px}\n.err{color:#f87171;font-size:14px;min-height:20px;margin-top:10px}code{background:#262b36;padding:2px 6px;border-radius:6px}\n.docs{margin-top:24px;color:#9aa4b2;font-size:14px;line-height:1.9}\n</style>\n</head>\n<body>\n<main>\n<h1>Translate API</h1>\n<p class="sub">Free translation powered by DeepL, ChatGPT Translate and Google Translate, no API key needed</p>\n<div class="card">\n<div class="row">\n<div class="field"><label>Engine</label><select id="engine"><option value="deepl">DeepL</option><option value="openai">ChatGPT Translate</option><option value="google">Google Translate</option></select></div>\n<div class="field"><label>From</label><select id="source"><option value="auto">Auto detect</option><option value="en">English</option><option value="ar">Arabic</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="zh">Chinese</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="tr">Turkish</option></select></div>\n<div class="field"><label>To</label><select id="target"><option value="ar">Arabic</option><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="ru">Russian</option><option value="zh">Chinese</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="tr">Turkish</option></select></div>\n</div>\n<div class="row"><div class="field"><label>Text</label><textarea id="text" placeholder="Type text to translate"></textarea></div></div>\n<div class="row"><div class="field"><label>Translation</label><div class="out" id="output"></div></div></div>\n<button id="go">Translate</button>\n<div class="err" id="err"></div>\n</div>\n<div class="card" style="margin-top:20px">\n<div class="row"><div class="field"><label>AI Chat, big-pickle</label><textarea id="prompt" placeholder="Ask anything"></textarea></div></div>\n<div class="row"><div class="field"><label>Reply</label><div class="out" id="chatout"></div></div></div>\n<button id="ask">Ask</button>\n<div class="err" id="chaterr"></div>\n</div>\n<div class="docs">\nAPI<br>\n<code>POST /api/translate</code> with <code>{"text":"Hello","target":"ar","source":"auto","engine":"deepl"}</code><br>\n<code>POST /api/chat</code> with <code>{"prompt":"Hello"}</code><br>\n<code>POST /api/detect</code> with <code>{"text":"Bonjour"}</code><br>\n<code>GET /api/languages</code> and <code>GET /api/health</code>\n</div>\n</main>\n<script>\nconst go=document.getElementById(\'go\'),out=document.getElementById(\'output\'),err=document.getElementById(\'err\');\ngo.onclick=async()=>{err.textContent=\'\';out.textContent=\'\';go.disabled=true;go.textContent=\'Translating...\';\ntry{const r=await fetch(\'/api/translate\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({text:document.getElementById(\'text\').value,target:document.getElementById(\'target\').value,source:document.getElementById(\'source\').value,engine:document.getElementById(\'engine\').value})});\nconst d=await r.json();if(!d.ok)throw new Error(d.error||\'failed\');out.textContent=d.translation}catch(e){err.textContent=e.message}\ngo.disabled=false;go.textContent=\'Translate\'};\nconst ask=document.getElementById(\'ask\'),cout=document.getElementById(\'chatout\'),cerr=document.getElementById(\'chaterr\'),history=[];\nask.onclick=async()=>{cerr.textContent=\'\';const q=document.getElementById(\'prompt\').value.trim();if(!q)return;history.push({role:\'user\',content:q});document.getElementById(\'prompt\').value=\'\';ask.disabled=true;ask.textContent=\'Thinking...\';\ntry{const r=await fetch(\'/api/chat\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({messages:history})});\nconst d=await r.json();if(!d.ok)throw new Error(d.error||\'failed\');history.push({role:\'assistant\',content:d.reply});cout.textContent=history.map(m=>(m.role===\'user\'?\'You: \':\'AI: \')+m.content).join(\'\\n\\n\')}catch(e){cerr.textContent=e.message;history.pop()}\nask.disabled=false;ask.textContent=\'Ask\'};\n</script>\n</body>\n</html>\n'
 
 
 @app.route("/", methods=["GET"])
